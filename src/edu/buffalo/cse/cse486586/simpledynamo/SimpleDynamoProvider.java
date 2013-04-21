@@ -1,6 +1,8 @@
 package edu.buffalo.cse.cse486586.simpledynamo;
 
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -20,6 +22,7 @@ import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
+import android.database.MatrixCursor;
 import android.net.Uri;
 import android.telephony.TelephonyManager;
 import android.util.Log;
@@ -28,16 +31,20 @@ public class SimpleDynamoProvider extends ContentProvider {
 	Context pcontext;
 	private static final String KEY_S = "key";
 	private static final String VALUE_S = "value";
+
 	static String selfPort;
 	static String succ1;
 	static String succ2;
 	static Boolean smallest;
+	static String[][] queryValue;
 	static HashMap<String, String> sList;
 	ContentResolver conRes;
 	static String up;
 	static int vote;
 	static String[] cols = { KEY_S, VALUE_S };
 	String node_id;
+	static int nquery;
+	static int max;
 
 	@Override
 	public int delete(Uri uri, String selection, String[] selectionArgs) {
@@ -55,18 +62,67 @@ public class SimpleDynamoProvider extends ContentProvider {
 	}
 
 	// to locally insert the key, value pair in internal storage
-	public void ins(String key, String value) {
-		Log.i("Provider ins " + selfPort, "key:" + key + ",value:" + value);
+	public void ins(String key, String value, String mver) {
 		try {
+			int version;
+			if (mver == null) {
+				File file = pcontext.getFileStreamPath(key);
+				int oldversion;
+				if (file.exists()) {
+					FileInputStream fin = pcontext.openFileInput(key);
+					InputStreamReader inpReader = new InputStreamReader(fin);
+					BufferedReader br = new BufferedReader(inpReader);
+					// Fill the buffer with data from file
+					String valver = br.readLine();
+					StringTokenizer sTok = new StringTokenizer(valver, ";");
+					String val = sTok.nextToken();
+					String ver = sTok.nextToken();
+					oldversion = Integer.parseInt(ver);
+					if (val.equals(value))
+						version = oldversion;
+					else
+						version = oldversion + 1;
+					fin.close();
+				} else
+					version = 0;
+			} else {
+				version = Integer.parseInt(mver);
+			}
+			Log.i("Provider ins " + selfPort, "key:" + key + ",value:" + value
+					+ ",version:" + version);
 			FileOutputStream fos = pcontext.openFileOutput(key,
 					Context.MODE_PRIVATE); // key is the filename
 			OutputStreamWriter osw = new OutputStreamWriter(fos);
-			osw.write(value);
+			osw.write(value + ";" + version);
 			osw.flush();
 			osw.close();
+			fos.close();
 		} catch (Exception e) {
 			Log.i("chatStorage, fileCreate()", "Exception e = " + e);
 		}
+	}
+
+	// local query for value corresponding to key
+	String quer(String selection) {
+		String fname = selection;
+		String valver;
+		Log.i("Provider quer", "key:" + selection);
+		File file = pcontext.getFileStreamPath(fname);
+		if (file.exists()) {
+			try {
+				FileInputStream fin = pcontext.openFileInput(fname);
+				InputStreamReader inpReader = new InputStreamReader(fin);
+				BufferedReader br = new BufferedReader(inpReader);
+				// Fill the buffer with data from file
+				valver = br.readLine();
+			} catch (Exception e) {
+				Log.i("chatStorage, readFile()", "Exception e = " + e);
+				valver = null;
+			}
+		} else
+			valver = null;
+		Log.i("Provider quer", "value-version:" + valver);
+		return valver;
 	}
 
 	@Override
@@ -81,50 +137,48 @@ public class SimpleDynamoProvider extends ContentProvider {
 				if (genHash(key).compareTo(node_id) <= 0
 						|| genHash(key).compareTo(genHash(succ2)) > 0) {
 					insertAt = selfPort;
-				} else if (genHash(key).compareTo(node_id) > 0
-						&& genHash(key).compareTo(genHash(succ1)) < 0) {
+				} else if (genHash(key).compareTo(node_id) > 0) {
 					insertAt = succ1;
 				}
 			} else {
-				if (genHash(key).compareTo(node_id) <= 0) {
+				if (genHash(key).compareTo(genHash(selfPort)) <= 0) {
 					if (genHash(key).compareTo(genHash(succ2)) > 0) {
 						insertAt = selfPort;
-					} else if (genHash(key).compareTo(genHash(succ2)) < 0
-							&& genHash(key).compareTo(genHash(succ1)) > 0)
+					} else
 						insertAt = succ2;
-				} else if (genHash(key).compareTo(node_id) > 0
-						&& genHash(key).compareTo(genHash(succ1)) < 0) {
+				} else if (genHash(key).compareTo(node_id) > 0) {
 					insertAt = succ1;
 				}
 			}
-			Log.i("insert",insertAt);
+
+			Log.i("insertAt", insertAt);
 			new Thread(new forClient(selfPort, Integer.parseInt(insertAt) * 2,
 					5)).start();
-			Thread.sleep(300);
-			if(up == null)
-				return null;
-			Log.i("insert","up "+up);
-			if (up.equals(insertAt))
+			Thread.sleep(250);
+			if (up != null && up.equals(insertAt)) {
+				Log.i("insert", "up " + up);
 				new Thread(new forClient(key + ";" + value,
 						Integer.parseInt(insertAt) * 2, 2)).start();
-			else {
+			} else {
 				new Thread(new forClient(selfPort, Integer.parseInt(sList
 						.get(insertAt)) * 2, 5)).start();
-				Thread.sleep(300);
-				if (up.equals(sList.get(insertAt)))
+				Thread.sleep(250);
+				if (up != null && up.equals(sList.get(insertAt))) {
+					Log.i("insert", "up " + up);
 					new Thread(new forClient(key + ";" + value,
 							Integer.parseInt(sList.get(insertAt)) * 2, 2))
 							.start();
-				else
+				} else
 					return null;
 			}
 		} catch (NoSuchAlgorithmException e) {
-
+			e.printStackTrace();
+			return null;
 		} catch (InterruptedException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
+			return null;
 		}
-		getContext().getContentResolver().notifyChange(uri, null);
 		return uri;
 	}
 
@@ -133,19 +187,13 @@ public class SimpleDynamoProvider extends ContentProvider {
 		pcontext = getContext();
 		selfPort = getAVD();
 		sList = new HashMap<String, String>();
-		sList.put("5554", "5556");
-		sList.put("5556", "5558");
-		sList.put("5558", "5554");
-		if (selfPort.equals("5554")) {
-			succ1 = "5556";
+		sList.put("5554", "5558");
+		sList.put("5556", "5554");
+		sList.put("5558", "5556");
+		smallest = false;
+		if (selfPort.equals("5556"))
 			smallest = true;
-		} else if (selfPort.equals("5556")) {
-			succ1 = "5558";
-			smallest = false;
-		} else {
-			succ1 = "5554";
-			smallest = false;
-		}
+		succ1 = sList.get(selfPort);
 		succ2 = sList.get(succ1);
 		try {
 			node_id = genHash(selfPort);
@@ -156,14 +204,68 @@ public class SimpleDynamoProvider extends ContentProvider {
 		conRes = pcontext.getContentResolver();
 		Thread th = new forServer();
 		th.start();
+
 		return false;
 	}
 
 	@Override
 	public Cursor query(Uri uri, String[] projection, String selection,
 			String[] selectionArgs, String sortOrder) {
-		// TODO Auto-generated method stub
-		return null;
+		String key = selection;
+		String queryAt = null;
+		nquery = 0;
+		queryValue = new String[3][2];
+		MatrixCursor mcur = new MatrixCursor(cols);
+		if (selectionArgs != null && selectionArgs.length > 0) {
+			if (selectionArgs[0].equals("ldump")) {
+				String[] savFiles = pcontext.fileList(); // get keys
+				for (int i = 0; i < savFiles.length; i++) {
+					String valver = quer(savFiles[i]);
+					StringTokenizer sTok = new StringTokenizer(valver, ";");
+					String value = sTok.nextToken();
+					String version = sTok.nextToken();
+					String[] row = { savFiles[i], value };
+					mcur.addRow(row); // query for each key from local storage
+				}
+			}
+		} else {
+			Log.i("Provider query", "key:" + key);
+			try {
+				String valver = quer(key);
+				if (valver != null) {
+					StringTokenizer sTok = new StringTokenizer(valver, ";");
+					String value = sTok.nextToken();
+					String version = sTok.nextToken();
+					queryValue[nquery][0] = value;
+					queryValue[nquery][1] = version;
+					nquery++;
+					Log.i("queryAt", succ1);
+					new Thread(new forClient(key + ";" + selfPort,
+							Integer.parseInt(succ1) * 2, 1)).start();
+					Log.i("queryAt", succ2);
+					new Thread(new forClient(key + ";" + selfPort,
+							Integer.parseInt(succ2) * 2, 1)).start();
+					Thread.sleep(600);
+					if (nquery > 1) {
+						max = 0;
+						for (int i = 1; i < nquery; i++) {
+							if (Integer.parseInt(queryValue[max][1]) < Integer
+									.parseInt(queryValue[i][1]))
+								max = i;
+						}
+						String[] row = { selection, queryValue[max][0] };
+						mcur.addRow(row);
+					} else
+						return null;
+				} else
+					return null;
+			} catch (InterruptedException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+				return null;
+			}
+		}
+		return mcur;
 	}
 
 	@Override
@@ -264,7 +366,10 @@ public class SimpleDynamoProvider extends ContentProvider {
 			try {
 				// open connection on port 10000
 				ServerSocket serSock = new ServerSocket(10000);
-				while (true) {
+				SimpleDynamoActivity.socket = serSock;
+				Thread rec = new recovery();
+				rec.start();
+				while (!SimpleDynamoActivity.shutDown) {
 					// listen for client
 					Socket recvSock = serSock.accept();
 					// Log.i("Connection", "Accepted");
@@ -278,18 +383,18 @@ public class SimpleDynamoProvider extends ContentProvider {
 					// recognise message type
 					switch (recvMsg.charAt(0)) {
 					case '%': // read
+						Thread quer = new queryKey(recvMsg.substring(1));
+						quer.start();
 						break;
 					case '$': // write
-						insertKey(recvMsg.substring(1));
+						Thread ins = new insertKey(recvMsg.substring(1));
+						ins.start();
 						break;
 					case '#': // vote request
-						new Thread(new forClient(selfPort,
-								Integer.parseInt(recvMsg.substring(1)) * 2, 4))
-								.start();
+						makeReplica(recvMsg.substring(1));
 						break;
 					case '&': // request reply
-						if (recvMsg.substring(1).equals(selfPort)
-								|| recvMsg.substring(1).equals(succ1)
+						if (recvMsg.substring(1).equals(succ1)
 								|| recvMsg.substring(1).equals(succ2))
 							vote++;
 						break;
@@ -301,8 +406,15 @@ public class SimpleDynamoProvider extends ContentProvider {
 					case '^': // to tell it is up
 						up = recvMsg.substring(1);
 						break;
-					// case '@': // get value for key
-					// break;
+					case '@': // get value for key
+						String valver = recvMsg.substring(1);
+						StringTokenizer sTok = new StringTokenizer(valver, ";");
+						String value = sTok.nextToken();
+						String version = sTok.nextToken();
+						queryValue[nquery][0] = value;
+						queryValue[nquery][1] = version;
+						nquery++;
+						break;
 					// case '*': // get local dump
 					// break;
 					// case '(': // get global dump
@@ -319,29 +431,117 @@ public class SimpleDynamoProvider extends ContentProvider {
 		}
 
 		// insert key-value
-		void insertKey(String msg) {
-			StringTokenizer sTok = new StringTokenizer(msg, ";");
-			String key = sTok.nextToken();
-			String value = sTok.nextToken();
-			vote = 0;
-			getVotes();
-			if (vote >= 2)
-				ins(key, value);
-		}
+		class insertKey extends Thread {
+			String msg;
 
-		void getVotes() {
-			new Thread(new forClient(selfPort, Integer.parseInt(selfPort) * 2,
-					3)).start();
-			new Thread(new forClient(selfPort, Integer.parseInt(succ1) * 2, 3))
+			insertKey(String msg) {
+				this.msg = msg;
+			}
+
+			public void run() {
+				StringTokenizer sTok = new StringTokenizer(msg, ";");
+				String key = sTok.nextToken();
+				String value = sTok.nextToken();
+				vote = 1;
+				msg = msg.concat(";" + selfPort + ";1");
+				getVotes(msg);
+				if (vote >= 2)
+					ins(key, value,null);
+			}
+		}// end of insertKey thread
+
+		// query key
+		class queryKey extends Thread {
+			String msg;
+
+			queryKey(String msg) {
+				this.msg = msg;
+			}
+
+			public void run() {
+				StringTokenizer sTok = new StringTokenizer(msg, ";");
+				String key = sTok.nextToken();
+				String port = sTok.nextToken();
+				vote = 1;
+				msg = msg.concat(";" + selfPort + ";2");
+				getVotes(msg);
+				if (vote >= 2) {
+					String valver = quer(key);
+					Log.i("Server queryKey", "key:" + key + ",port:" + port
+							+ ",valver:" + valver);
+					new Thread(new forClient(valver,
+							Integer.parseInt(port) * 2, 7)).start();
+				}
+			}
+		}// end of queryKey thread
+
+		void getVotes(String msg) {
+			new Thread(new forClient(msg, Integer.parseInt(succ1) * 2, 3))
 					.start();
-			new Thread(new forClient(selfPort, Integer.parseInt(succ2) * 2, 3))
+			new Thread(new forClient(msg, Integer.parseInt(succ2) * 2, 3))
 					.start();
 			try {
-				Thread.sleep(200);
+				Thread.sleep(300);
 			} catch (InterruptedException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
 		}
-	}
+
+		void makeReplica(String msg) {
+			StringTokenizer sTok = new StringTokenizer(msg, ";");
+			String key = sTok.nextToken();
+			String value = sTok.nextToken();
+			String port = sTok.nextToken();
+			String flag = sTok.nextToken();
+			if (flag.equals("1"))
+				ins(key, value,null);
+			new Thread(new forClient(selfPort, Integer.parseInt(port) * 2, 4))
+					.start();
+		}
+
+		class recovery extends Thread {
+
+			public void run() {
+				for (int i = 0; i < SimpleDynamoActivity.TEST_CNT; i++) {
+					String key = "" + i;
+
+					Cursor resultCursor = query(SimpleDynamoActivity.mUri,
+							null, key, null, null);
+					if (resultCursor == null) {
+						Log.e(TAG, "Result null");
+						break;
+					}
+
+					int keyIndex = resultCursor.getColumnIndex(KEY_S);
+					int valueIndex = resultCursor.getColumnIndex(VALUE_S);
+					if (keyIndex == -1 || valueIndex == -1) {
+						Log.e(TAG, "Wrong columns");
+						resultCursor.close();
+					}
+
+					resultCursor.moveToFirst();
+
+					if (!(resultCursor.isFirst() && resultCursor.isLast())) {
+						Log.e(TAG, "Wrong number of rows");
+						resultCursor.close();
+					}
+
+					final String returnKey = resultCursor.getString(keyIndex);
+					final String returnValue = resultCursor
+							.getString(valueIndex);
+					String returnVersion = queryValue[max][1];
+					ins(returnKey, returnValue, returnVersion);
+
+					resultCursor.close();
+					try {
+						Thread.sleep(1000);
+					} catch (InterruptedException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+				}
+			}
+		}// end of recovery thread
+	}// end of server thread
 }

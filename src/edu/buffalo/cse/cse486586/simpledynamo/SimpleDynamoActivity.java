@@ -1,5 +1,8 @@
 package edu.buffalo.cse.cse486586.simpledynamo;
 
+import java.io.IOException;
+import java.net.ServerSocket;
+
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -14,14 +17,16 @@ import android.view.View;
 import android.widget.TextView;
 
 public class SimpleDynamoActivity extends Activity {
-	private static final int TEST_CNT = 20;
+	public static final int TEST_CNT = 20;
 	private static final String KEY_FIELD = "key";
 	private static final String VALUE_FIELD = "value";
 	private static final String TAG = SimpleDynamoActivity.class.getName();
 	Handler handle = new Handler();
 	TextView tv;
-	Uri mUri;
+	public static Uri mUri;
 	ContentResolver conRes;
+	public volatile static Boolean shutDown = false;
+	public static ServerSocket socket;
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
@@ -58,12 +63,6 @@ public class SimpleDynamoActivity extends Activity {
 			cv[i] = new ContentValues();
 			cv[i].put(KEY_FIELD, Integer.toString(i));
 			cv[i].put(VALUE_FIELD, "Put1" + Integer.toString(i));
-			try {
-				Thread.sleep(1000);
-			} catch (InterruptedException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
 		}
 		try {
 			for (int i = 0; i < TEST_CNT; i++) {
@@ -78,8 +77,15 @@ public class SimpleDynamoActivity extends Activity {
 					});
 					break;
 				}
+				try {
+					Thread.sleep(1000);
+				} catch (InterruptedException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
 			}
 		} catch (Exception e) {
+			e.printStackTrace();
 			Log.e(TAG, e.toString());
 		}
 	}
@@ -91,12 +97,6 @@ public class SimpleDynamoActivity extends Activity {
 			cv[i] = new ContentValues();
 			cv[i].put(KEY_FIELD, Integer.toString(i));
 			cv[i].put(VALUE_FIELD, "Put2" + Integer.toString(i));
-			try {
-				Thread.sleep(1000);
-			} catch (InterruptedException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
 		}
 		try {
 			for (int i = 0; i < TEST_CNT; i++) {
@@ -111,8 +111,15 @@ public class SimpleDynamoActivity extends Activity {
 					});
 					break;
 				}
+				try {
+					Thread.sleep(1000);
+				} catch (InterruptedException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
 			}
 		} catch (Exception e) {
+			e.printStackTrace();
 			Log.e(TAG, e.toString());
 		}
 	}
@@ -124,12 +131,6 @@ public class SimpleDynamoActivity extends Activity {
 			cv[i] = new ContentValues();
 			cv[i].put(KEY_FIELD, Integer.toString(i));
 			cv[i].put(VALUE_FIELD, "Put3" + Integer.toString(i));
-			try {
-				Thread.sleep(1000);
-			} catch (InterruptedException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
 		}
 		try {
 			for (int i = 0; i < TEST_CNT; i++) {
@@ -144,8 +145,15 @@ public class SimpleDynamoActivity extends Activity {
 					});
 					break;
 				}
+				try {
+					Thread.sleep(1000);
+				} catch (InterruptedException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
 			}
 		} catch (Exception e) {
+			e.printStackTrace();
 			Log.e(TAG, e.toString());
 		}
 	}
@@ -172,5 +180,75 @@ public class SimpleDynamoActivity extends Activity {
 			resultCursor.moveToNext();
 		}
 		resultCursor.close();
+	}
+	
+	public void Get(View v){
+		try {
+			for (int i = 0; i < TEST_CNT; i++) {
+				String key = ""+i;
+
+				Cursor resultCursor = conRes.query(mUri, null,
+						key, null, null);
+				if (resultCursor == null) {
+					Log.e(TAG, "Result null");
+					handle.post(new Runnable() {
+						public void run() {
+							tv.append("Quorum not established!\n");
+						}
+					});
+					throw new Exception();
+				}
+
+				int keyIndex = resultCursor.getColumnIndex(KEY_FIELD);
+				int valueIndex = resultCursor.getColumnIndex(VALUE_FIELD);
+				if (keyIndex == -1 || valueIndex == -1) {
+					Log.e(TAG, "Wrong columns");
+					resultCursor.close();
+					throw new Exception();
+				}
+
+				resultCursor.moveToFirst();
+
+				if (!(resultCursor.isFirst() && resultCursor.isLast())) {
+					Log.e(TAG, "Wrong number of rows");
+					resultCursor.close();
+					throw new Exception();
+				}
+
+				final String returnKey = resultCursor.getString(keyIndex);
+				final String returnValue = resultCursor.getString(valueIndex);
+				handle.post(new Runnable() {
+					public void run() {
+						tv.append("key:" + returnKey + ",value:" + returnValue + "\n");
+					}
+				});
+
+				resultCursor.close();
+				Thread.sleep(1000);
+			}
+		} catch (Exception e) {
+		}
+	}
+	
+	@Override
+	protected void onStop() {
+//		This code helps clear the previously stored key value pairs in internal storage		
+		/*Uri mUri = buildUri("content",
+				"edu.buffalo.cse.cse486586.simpledynamo.provider");
+		getContentResolver().delete(mUri, null, null);*/
+		shutDown = true;
+		if(!socket.isClosed()){
+			try {
+				Thread.sleep(150);
+				socket.close();
+			} catch (InterruptedException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
+		super.onStop();
 	}
 }
