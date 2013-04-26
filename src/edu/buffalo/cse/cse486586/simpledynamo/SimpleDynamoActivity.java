@@ -173,7 +173,7 @@ public class SimpleDynamoActivity extends Activity {
 			final String value = resultCursor.getString(valueIndex);
 			handle.post(new Runnable() {
 				public void run() {
-					tv.append("key:" + key + ",value:" + value + "\n");
+					tv.append("<" + key + "," + value + ">\n");
 				}
 			});
 
@@ -219,7 +219,7 @@ public class SimpleDynamoActivity extends Activity {
 				final String returnValue = resultCursor.getString(valueIndex);
 				handle.post(new Runnable() {
 					public void run() {
-						tv.append("key:" + returnKey + ",value:" + returnValue + "\n");
+						tv.append("<" + returnKey + "," + returnValue + ">\n");
 					}
 				});
 

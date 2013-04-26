@@ -151,7 +151,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 				}
 			}
 
-			Log.i("insertAt", insertAt);
+			Log.i("insertAt", insertAt + " from " + selfPort);
 			new Thread(new forClient(selfPort, Integer.parseInt(insertAt) * 2,
 					5)).start();
 			Thread.sleep(250);
@@ -160,6 +160,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 				new Thread(new forClient(key + ";" + value,
 						Integer.parseInt(insertAt) * 2, 2)).start();
 			} else {
+				Log.i("Try inserting at", sList.get(insertAt));
 				new Thread(new forClient(selfPort, Integer.parseInt(sList
 						.get(insertAt)) * 2, 5)).start();
 				Thread.sleep(250);
@@ -168,8 +169,10 @@ public class SimpleDynamoProvider extends ContentProvider {
 					new Thread(new forClient(key + ";" + value,
 							Integer.parseInt(sList.get(insertAt)) * 2, 2))
 							.start();
-				} else
+				} else {
+					Log.i("insert fail!", selfPort);
 					return null;
+				}
 			}
 		} catch (NoSuchAlgorithmException e) {
 			e.printStackTrace();
@@ -229,7 +232,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 				}
 			}
 		} else {
-			Log.i("Provider query", "key:" + key);
+			Log.i("Provider query " + selfPort, "key:" + key);
 			try {
 				String valver = quer(key);
 				if (valver != null) {
@@ -328,10 +331,6 @@ public class SimpleDynamoProvider extends ContentProvider {
 					sendData.println("^" + msg);
 				if (type == 7) // query response
 					sendData.println("@" + msg);
-				if (type == 8) // gdump
-					sendData.println("*" + msg);
-				if (type == 9) // gdump reply
-					sendData.println("(" + msg);
 				sendData.flush();
 				sendData.close();
 				clSock.close();
@@ -408,12 +407,16 @@ public class SimpleDynamoProvider extends ContentProvider {
 						break;
 					case '@': // get value for key
 						String valver = recvMsg.substring(1);
-						StringTokenizer sTok = new StringTokenizer(valver, ";");
-						String value = sTok.nextToken();
-						String version = sTok.nextToken();
-						queryValue[nquery][0] = value;
-						queryValue[nquery][1] = version;
-						nquery++;
+						if (!valver.equals("null")) {
+							Log.i("Get value for key", valver);
+							StringTokenizer sTok = new StringTokenizer(valver,
+									";");
+							String value = sTok.nextToken();
+							String version = sTok.nextToken();
+							queryValue[nquery][0] = value;
+							queryValue[nquery][1] = version;
+							nquery++;
+						}
 						break;
 					// case '*': // get local dump
 					// break;
@@ -422,6 +425,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 					}
 					recvSock.close();
 				}
+				serSock.close();
 			} catch (IOException e) {
 				// TODO Auto-generated catch block
 				Log.i(TAG, "I/O error occured when creating the socket!\n");
@@ -446,7 +450,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 				msg = msg.concat(";" + selfPort + ";1");
 				getVotes(msg);
 				if (vote >= 2)
-					ins(key, value,null);
+					ins(key, value, null);
 			}
 		}// end of insertKey thread
 
@@ -494,8 +498,9 @@ public class SimpleDynamoProvider extends ContentProvider {
 			String value = sTok.nextToken();
 			String port = sTok.nextToken();
 			String flag = sTok.nextToken();
+			Log.i("Vote from " + selfPort, "For " + port);
 			if (flag.equals("1"))
-				ins(key, value,null);
+				ins(key, value, null);
 			new Thread(new forClient(selfPort, Integer.parseInt(port) * 2, 4))
 					.start();
 		}
